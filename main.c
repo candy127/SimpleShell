@@ -12,10 +12,18 @@
 
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <string.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
+#include <stdlib.h>
+
 
 /*
   Function Declarations for builtin shell commands:
@@ -23,21 +31,159 @@
 int lsh_cd(char **args);
 int lsh_help(char **args);
 int lsh_exit(char **args);
+int my_mv(char **args);
+int my_ls(char **args);
 
+
+char *month[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sept","Oct","Nov","Dec"};
 /*
   List of builtin commands, followed by their corresponding functions.
  */
 char *builtin_str[] = {
   "cd",
   "help",
-  "exit"
+  "exit",
+  "mv",
+  "ls"
 };
 
 int (*builtin_func[]) (char **) = {
   &lsh_cd,
   &lsh_help,
-  &lsh_exit
+  &lsh_exit,
+  &my_mv,
+  &my_ls
 };
+
+int calblocksize(int n){
+    int num=1;
+    if(n == 0){
+        return 0;
+    }
+    while(1){
+        if(4000*num+100 > n){
+            
+            return (4000*num)/1000;
+        }
+        num += 1;
+    }
+}
+int ccountnum(int n){
+    int count=0;
+    while(n >= 10){
+        count += 1;
+        n = n/10;
+    }
+    return count+2;
+}
+
+int my_ls(char **args){  
+    int len=0,total=0,max=0;
+    char a[20]={' '};
+    struct passwd *user_pw;
+    struct group *user_gr;
+    struct stat buf,dbuf;
+    struct tm *d;
+    DIR *dp = NULL;
+    struct dirent *entry = NULL;
+    memset(a,0,sizeof(char)*20);
+    if(args[1] == NULL){
+        if((dp = opendir(".")) == NULL)
+        {
+            fprintf(stderr,"fail to open current directory");
+            return 1;
+        }
+        while((entry = readdir(dp)) != NULL){
+           
+            if(entry->d_name[0] == '.'){
+                continue;
+            }
+            len += strlen(entry->d_name);
+            fprintf(stdout,"%s ",entry->d_name);
+            if(len >= 90){
+                fprintf(stdout,"\n");
+                len = 0;
+            }
+        }
+         fprintf(stdout,"\n");
+    }else if(args[2] == NULL){
+        if((dp = opendir(".")) == NULL)
+        {
+            fprintf(stderr,"fail to open current directory");
+            return 1;
+        }
+        
+        if(!strcmp(args[1],"-l")){
+            
+            while((entry = readdir(dp)) != NULL){
+                if (stat(entry->d_name, &dbuf) == -1) 
+            { fprintf(stderr,"stat"); 
+            return 1; }
+             if(entry->d_name[0] == '.'){
+                continue;
+            }      
+                total += calblocksize(dbuf.st_size);
+                if(dbuf.st_size > max)
+                    max = dbuf.st_size;            
+            }
+            fprintf(stdout,"total %ld\n",total);        
+             if((dp = opendir(".")) == NULL)
+            {
+            fprintf(stderr,"fail to open current directory");
+            return 1;
+            }
+            while((entry = readdir(dp)) != NULL){
+                 if(entry->d_name[0] == '.'){
+                continue;
+            }          
+            if (stat(entry->d_name, &buf) == -1) 
+            { fprintf(stderr,"stat"); 
+            return 1; }
+            user_gr = getgrgid(buf.st_gid);
+            user_pw = getpwuid(buf.st_uid);
+            file_permissions(buf,a);
+            d = localtime(&buf.st_ctime);
+            fprintf(stdout,"%s %ld %s %s %*lld %.3s %2d %.2d:%.2d %s\n",a,(long) buf.st_nlink,user_pw->pw_name,user_gr->gr_name,\
+            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_min,d->tm_sec,entry->d_name);
+            memset(a,0,sizeof(char)*20);
+            }
+        }else if(!strcmp(args[1],"-la")){
+             
+            while((entry = readdir(dp)) != NULL){
+                if (stat(entry->d_name, &dbuf) == -1) 
+            { fprintf(stderr,"stat"); 
+            return 1; }
+         
+                total += calblocksize(dbuf.st_size);
+                if(dbuf.st_size > max)
+                    max = dbuf.st_size;            
+            }
+            fprintf(stdout,"total %ld\n",total);        
+             if((dp = opendir(".")) == NULL)
+            {
+            fprintf(stderr,"fail to open current directory");
+            return 1;
+            }
+            while((entry = readdir(dp)) != NULL){
+                
+            if (stat(entry->d_name, &buf) == -1) 
+            { fprintf(stderr,"stat"); 
+            return 1; }
+            user_gr = getgrgid(buf.st_gid);
+            user_pw = getpwuid(buf.st_uid);
+            file_permissions(buf,a);
+            d = localtime(&buf.st_ctime);
+            fprintf(stdout,"%s %ld %s %s %*lld %.3s %2d %.2d:%.2d %s\n",a,(long) buf.st_nlink,user_pw->pw_name,user_gr->gr_name,\
+            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_min,d->tm_sec,entry->d_name);
+            memset(a,0,sizeof(char)*20);
+            }
+        }else if(!strcmp(args[1],"-help")){
+            
+        }
+    }
+return 1;
+}
+
 
 int lsh_num_builtins() {
   return sizeof(builtin_str) / sizeof(char *);
@@ -62,6 +208,151 @@ int lsh_cd(char **args)
     }
   }
   return 1;
+}
+long file_size(int fd){
+    long filesize = 0;
+    filesize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+    return filesize;
+}
+void file_permissions(struct stat sb,char *str){
+    int root=0,group=0,other=0,sid=0; 
+    switch (sb.st_mode & S_IFMT) { 
+        case S_IFBLK: strcat(str,"b"); break; 
+        case S_IFCHR: strcat(str,"c"); break; 
+        case S_IFDIR: strcat(str,"d");break; 
+        case S_IFIFO: strcat(str,"p");break; 
+        case S_IFLNK: strcat(str,"l"); break; 
+        case S_IFREG: strcat(str,"-"); break; 
+        case S_IFSOCK: strcat(str,"s"); break; 
+        default: strcat(str,"?"); break; }
+
+
+    if( sb.st_mode & S_IRUSR )
+        strcat(str,"r");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IWUSR )
+        strcat(str,"w");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IXUSR )
+        strcat(str,"x");
+    else if( sb.st_mode & S_ISUID )
+        strcat(str,"s");
+     else
+        strcat(str,"-");
+
+
+    if( sb.st_mode & S_IRGRP )
+        strcat(str,"r");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IWGRP )
+        strcat(str,"w");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IXGRP )
+        strcat(str,"x");
+    else if( sb.st_mode & S_ISGID )
+        strcat(str,"s");
+     else
+        strcat(str,"-");
+ 
+
+    if( sb.st_mode & S_IROTH )
+        strcat(str,"r");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IWOTH )
+        strcat(str,"w");
+     else
+        strcat(str,"-");
+    if( sb.st_mode & S_IXOTH )
+        strcat(str,"x");
+    else if( sb.st_mode & S_ISVTX )
+        strcat(str,"t");
+     else
+        strcat(str,"-");
+    
+}
+
+int file_permission(struct stat sb){
+    int root=0,group=0,other=0,sid=0;
+    if( sb.st_mode & S_ISUID )
+        sid += 4;
+    if( sb.st_mode & S_ISGID )
+        sid += 2;
+    if( sb.st_mode & S_ISVTX )
+        sid += 1;
+
+    if( sb.st_mode & S_IRUSR )
+        root += 4;
+    if( sb.st_mode & S_IWUSR )
+        root += 2;
+    if( sb.st_mode & S_IXUSR )
+        root += 1;
+
+    if( sb.st_mode & S_IRGRP )
+        group += 4;
+    if( sb.st_mode & S_IWGRP )
+        group += 2;
+    if( sb.st_mode & S_IXGRP )
+        group += 1;
+ 
+    if( sb.st_mode & S_IROTH )
+        other += 4;
+    if( sb.st_mode & S_IWOTH )
+        other += 2;
+    if( sb.st_mode & S_IXOTH )
+        other += 1;
+    return (512*sid)+(64*root)+(8*group)+(1*other);
+}
+
+int my_mv(char **args){
+    struct stat src_sb,dest_sb;
+    int src,dest,src_size,rlen;
+    char *src_value;
+    if (stat(args[1], &src_sb) == -1) 
+    { fprintf(stderr,"stat"); 
+    return 1; 
+    }
+
+    if (args[1] == NULL){
+        fprintf(stderr,"my_mv: missing file operand");
+        return 1;
+    }else if(args[2] == NULL){
+        fprintf(stderr,"my_mv: missing destination file operand after '%s'",args[1]);
+        return 1;
+    }else{
+        src = open(args[1],O_RDWR);
+        src_size = file_size(src);
+        src_value = (char *)malloc(sizeof(char)*src_size);
+        rlen  = read(src, src_value, src_size);
+        dest = open(args[2],  O_RDWR | O_CREAT,file_permission(src_sb));
+        fprintf(stdout,"%d\n",file_permission(src_sb));
+        if (stat(args[2], &dest_sb) == -1)
+        { 
+            fprintf(stderr,"stat"); 
+            return 1; 
+        }
+        if(S_ISDIR(dest_sb.st_mode))
+        {
+            char *newname;
+            close(dest);
+            newname = (char *)malloc(strlen(args[2])+strlen(args[1])+2);
+            strcpy(newname,args[2]);
+            strcat(newname,"/");
+            dest = open(strcat(newname,args[1]),  O_RDWR | O_CREAT,file_permission(src_sb));
+            free(newname);
+        }
+        write(dest, src_value, src_size);
+        free(src_value);
+        close(src);
+        close(dest);
+        remove(args[1]);
+    }  
+    return 1;
 }
 
 /**
