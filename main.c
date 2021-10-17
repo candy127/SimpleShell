@@ -9,7 +9,7 @@
   @brief        LSH (Libstephen SHell)
 
 *******************************************************************************/
-
+#include <libgen.h>
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -23,8 +23,10 @@
 #include <grp.h>
 #include <time.h>
 #include <stdlib.h>
+#include <errno.h>
 
-
+#define MAX_PATH 260
+#define PATH_SIZE 512
 /*
   Function Declarations for builtin shell commands:
  */
@@ -34,11 +36,19 @@ int lsh_exit(char **args);
 int my_mv(char **args);
 int my_ls(char **args);
 
+int fid = 0;
 
 char *month[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sept","Oct","Nov","Dec"};
 /*
   List of builtin commands, followed by their corresponding functions.
  */
+
+ void  INThandler(int sig)
+{
+     //lsh_exit("sigend");
+     //main();
+}
+
 char *builtin_str[] = {
   "cd",
   "help",
@@ -84,6 +94,7 @@ int my_ls(char **args){
     struct group *user_gr;
     struct stat buf,dbuf;
     struct tm *d;
+    char currentdir[MAX_PATH];
     DIR *dp = NULL;
     struct dirent *entry = NULL;
     memset(a,0,sizeof(char)*20);
@@ -178,9 +189,12 @@ int my_ls(char **args){
             memset(a,0,sizeof(char)*20);
             }
         }else if(!strcmp(args[1],"-help")){
-            
+            printf("my_ls is show the file or directory list\n");
+            printf("-l is more detail, -la is more more detail\n");
+            printf("enjoy!\n");
         }
     }
+
 return 1;
 }
 
@@ -313,10 +327,22 @@ int my_mv(char **args){
     struct stat src_sb,dest_sb;
     int src,dest,src_size,rlen;
     char *src_value;
-    if (stat(args[1], &src_sb) == -1) 
-    { fprintf(stderr,"stat"); 
+    char tmp_path[PATH_SIZE];
+    if (stat(args[1], &src_sb) == -1)  { fprintf(stderr,"stat1"); 
     return 1; 
-    }
+    };
+    //--------------------------------
+      int len=0,total=0,max=0;
+    char a[20]={' '};
+    struct passwd *user_pw;
+    struct group *user_gr;
+    struct stat buf,dbuf;
+    struct tm *d;
+    char currentdir[MAX_PATH];
+    DIR *dp = NULL;
+    struct dirent *entry = NULL;
+    //--------------------------------
+   
 
     if (args[1] == NULL){
         fprintf(stderr,"my_mv: missing file operand");
@@ -326,14 +352,17 @@ int my_mv(char **args){
         return 1;
     }else{
         src = open(args[1],O_RDWR);
+        if(!S_ISDIR(src_sb.st_mode))
+        {
         src_size = file_size(src);
         src_value = (char *)malloc(sizeof(char)*src_size);
         rlen  = read(src, src_value, src_size);
         dest = open(args[2],  O_RDWR | O_CREAT,file_permission(src_sb));
-        fprintf(stdout,"%d\n",file_permission(src_sb));
+    
         if (stat(args[2], &dest_sb) == -1)
         { 
-            fprintf(stderr,"stat"); 
+            fprintf(stdout,"args[2] : %s\n",args[2]);
+            fprintf(stderr,"stat3%s\n",strerror(errno)); 
             return 1; 
         }
         if(S_ISDIR(dest_sb.st_mode))
@@ -343,6 +372,7 @@ int my_mv(char **args){
             newname = (char *)malloc(strlen(args[2])+strlen(args[1])+2);
             strcpy(newname,args[2]);
             strcat(newname,"/");
+            
             dest = open(strcat(newname,args[1]),  O_RDWR | O_CREAT,file_permission(src_sb));
             free(newname);
         }
@@ -350,8 +380,105 @@ int my_mv(char **args){
         free(src_value);
         close(src);
         close(dest);
+        fprintf(stdout,"rmdir %s\n",args[1]);
         remove(args[1]);
+        rmdir(args[1]);  
+        }else{
+        // if (stat(args[1], &src_sb) == -1) return -1;
+        // strcpy(tmp_path,args[1]);
+        // strcat(tmp_path,"/");
+        strcpy(tmp_path,args[2]);
+         strcat(tmp_path,"/");
+        char *t1 = strdup(args[1]);
+        strcat(tmp_path,basename(t1));
+        //strcpy(args[2],tmp_path);
+       //mkdir(tmp_path,file_permission(src_sb));
+        if((dp = opendir(args[1])) == NULL)
+        {
+            fprintf(stderr,"fail to open directory");
+            return 1;
+        }
+           if(fid != 0){
+         strcpy(tmp_path,args[2]);
+          
+        strcat(tmp_path,"/");
+        char *t1 = strdup(args[1]);
+
+        strcat(tmp_path,basename(t1));
+           }else{
+                strcpy(tmp_path,args[2]);
+              
+           }
+        mkdir(tmp_path,file_permission(src_sb));
+        strcpy(args[2],tmp_path);
+          while((entry = readdir(dp)) != NULL){
+              
+                 
+            if(!strcmp(entry->d_name,".") || !strcmp(entry->d_name,"..")){
+                continue;
+            }     
+         
+            strcpy(tmp_path,args[1]);
+            strcat(tmp_path,"/");
+            strcat(tmp_path,entry->d_name);
+        
+            
+            if (stat(tmp_path, &buf) == -1) 
+            { 
+                fprintf(stderr,"stat3%s\n",strerror(errno)); 
+            return 1; }
+           
+            if(S_ISDIR(buf.st_mode)){
+                fid = fork();
+                
+                if(fid == 0){
+                    char *argv[3];
+                  
+                    strcpy(tmp_path,args[1]);
+                    strcat(tmp_path,"/");
+                    strcat(tmp_path,entry->d_name);
+                    argv[1] = (char *)malloc(sizeof(char) * strlen(tmp_path)+1);
+                    strcpy(argv[1],tmp_path);
+                    strcpy(argv[0],args[1]);
+                    strcpy(tmp_path,args[2]);
+                    // strcat(tmp_path,"/");
+                    // char *t2 = strdup(args[1]);
+                    // strcat(tmp_path,basename(t1));
+                    strcat(tmp_path,"/");
+                    strcat(tmp_path,entry->d_name);
+    
+                    argv[2] = (char *)malloc(sizeof(char) * strlen(tmp_path)+1);
+                    strcpy(argv[2],tmp_path);
+              
+                    my_mv(argv);
+                    fprintf(stdout,"rmdir %s\n",argv[0]);
+                    fprintf(stdout,"rmdir %s\n",argv[1]);
+                    rmdir(argv[0]); 
+                    free(argv[1]);
+                    free(argv[2]);
+                    exit(0);
+                }
+            }else{
+            char *argv[3];
+            strcpy(tmp_path,args[1]);
+            strcat(tmp_path,"/");
+            strcat(tmp_path,entry->d_name);
+            argv[1] = (char *)malloc(sizeof(char) * strlen(tmp_path)+1);
+            strcpy(argv[1],tmp_path);
+            strcpy(tmp_path,args[2]);
+            strcat(tmp_path,"/");
+            strcat(tmp_path,entry->d_name);
+            argv[2] = (char *)malloc(sizeof(char) * strlen(tmp_path)+1);
+            strcpy(argv[2],tmp_path);
+            my_mv(argv);
+            }
+           
+           
     }  
+        }
+    }
+    fprintf(stdout,"rmdir %s\n",args[1]);
+    rmdir(args[1]);      
     return 1;
 }
 
@@ -564,7 +691,7 @@ void lsh_loop(void)
 int main(int argc, char **argv)
 {
   // Load config files, if any.
-
+signal(SIGINT, INThandler);
   // Run command loop.
   lsh_loop();
 
