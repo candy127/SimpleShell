@@ -24,7 +24,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <errno.h>
-
+int ppid;
 #define MAX_PATH 260
 #define PATH_SIZE 512
 /*
@@ -36,18 +36,36 @@ int lsh_exit(char **args);
 int my_mv(char **args);
 int my_ls(char **args);
 void file_permissions(struct stat sb,char *str);
+void lsh_loop(void);
+int main();
+ void  INThandler(int sig);
 
-int fid = 0;
 
 char *month[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sept","Oct","Nov","Dec"};
 /*
   List of builtin commands, followed by their corresponding functions.
  */
 
- void  INThandler(int sig)
-{
-   
-}
+
+//  void  INThandler(int sig)
+// {int fid,status;
+// signal(SIGINT, INThandler);
+// printf("hello\n");
+//   fid = fork();
+
+// if (fid == 0){
+// printf("\n");
+// lsh_loop();
+// exit(0);
+// }
+//     waitpid(fid,&status,0);  
+//     exit(0);
+//       return;
+
+
+// }
+
+
 
 char *builtin_str[] = {
   "cd",
@@ -102,7 +120,7 @@ int my_ls(char **args){
     if(args[1] == NULL){
         if((dp = opendir(".")) == NULL)
         {
-            fprintf(stderr,"fail to open current directory");
+            fprintf(stderr,"fail to open current directory\n");
             return 1;
         }
         while((entry = readdir(dp)) != NULL){
@@ -121,7 +139,7 @@ int my_ls(char **args){
     }else if(args[2] == NULL){
         if((dp = opendir(".")) == NULL)
         {
-            fprintf(stderr,"fail to open current directory");
+            fprintf(stderr,"fail to open current directory\n");
             return 1;
         }
         
@@ -141,7 +159,7 @@ int my_ls(char **args){
             fprintf(stdout,"total %ld\n",total);        
              if((dp = opendir(".")) == NULL)
             {
-            fprintf(stderr,"fail to open current directory");
+            fprintf(stderr,"fail to open current directory\n");
             return 1;
             }
             while((entry = readdir(dp)) != NULL){
@@ -156,7 +174,7 @@ int my_ls(char **args){
             file_permissions(buf,a);
             d = localtime(&buf.st_ctime);
             fprintf(stdout,"%s %ld %s %s %*lld %.3s %2d %.2d:%.2d %s\n",a,(long) buf.st_nlink,user_pw->pw_name,user_gr->gr_name,\
-            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_min,d->tm_sec,entry->d_name);
+            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_hour,d->tm_min,entry->d_name);
             memset(a,0,sizeof(char)*20);
             }
         }else if(!strcmp(args[1],"-la")){
@@ -173,7 +191,7 @@ int my_ls(char **args){
             fprintf(stdout,"total %ld\n",total);        
              if((dp = opendir(".")) == NULL)
             {
-            fprintf(stderr,"fail to open current directory");
+            fprintf(stderr,"fail to open current directory\n");
             return 1;
             }
             while((entry = readdir(dp)) != NULL){
@@ -186,10 +204,10 @@ int my_ls(char **args){
             file_permissions(buf,a);
             d = localtime(&buf.st_ctime);
             fprintf(stdout,"%s %ld %s %s %*lld %.3s %2d %.2d:%.2d %s\n",a,(long) buf.st_nlink,user_pw->pw_name,user_gr->gr_name,\
-            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_min,d->tm_sec,entry->d_name);
+            ccountnum(max),(long long) buf.st_size,month[d->tm_mon],d->tm_mday,d->tm_hour,d->tm_min,entry->d_name);
             memset(a,0,sizeof(char)*20);
             }
-        }else if(!strcmp(args[1],"-help")){
+        }else if(!strcmp(args[1],"--help")){
             printf("my_ls is show the file or directory list\n");
             printf("-l is more detail, -la is more more detail\n");
             printf("enjoy!\n");
@@ -329,9 +347,8 @@ int my_mv(char **args){
     int src,dest,src_size,rlen;
     char *src_value;
     char tmp_path[PATH_SIZE];
-    if (stat(args[1], &src_sb) == -1)  { fprintf(stderr,"stat1"); 
-    return 1; 
-    };
+    int fid = 0;
+    int status =0 ;
     //--------------------------------
     int len=0,max=0;
     char a[20]={' '};
@@ -344,12 +361,15 @@ int my_mv(char **args){
    
 
     if (args[1] == NULL){
-        fprintf(stderr,"my_mv: missing file operand");
+        fprintf(stderr,"my_mv: missing file operand\n");
         return 1;
     }else if(args[2] == NULL){
-        fprintf(stderr,"my_mv: missing destination file operand after '%s'",args[1]);
+        fprintf(stderr,"my_mv: missing destination file operand after '%s'\n",args[1]);
         return 1;
     }else{
+       if (stat(args[1], &src_sb) == -1)  { fprintf(stderr,"stat1"); 
+    return 1; 
+    };
         src = open(args[1],O_RDWR);
         if(!S_ISDIR(src_sb.st_mode))
         {
@@ -469,7 +489,8 @@ int my_mv(char **args){
         }
     }
    
-    rmdir(args[1]);      
+    rmdir(args[1]);  
+    waitpid(fid,&status,0);    
     return 1;
 }
 
@@ -500,7 +521,7 @@ int lsh_help(char **args)
  */
 int lsh_exit(char **args)
 {
-  return 0;
+ exit(0);
 }
 
 /**
@@ -661,8 +682,8 @@ void lsh_loop(void)
   char *line;
   char **args;
   int status;
-
   do {
+signal(SIGINT, INThandler);
     printf("> ");
     line = lsh_read_line();
     args = lsh_split_line(line);
@@ -679,15 +700,26 @@ void lsh_loop(void)
    @param argv Argument vector.
    @return status code
  */
-int main(int argc, char **argv)
+int main()
 {
+ppid = getpid();
   // Load config files, if any.
 signal(SIGINT, INThandler);
+
+lsh_loop();
+
   // Run command loop.
-  lsh_loop();
-
-  // Perform any shutdown/cleanup.
-
+ 
   return EXIT_SUCCESS;
 }
+ void  INThandler(int sig)
+{int fd,status;
 
+
+
+fprintf(stderr,"\n");
+fprintf(stderr,"> ");
+      return;
+
+
+}
